@@ -4,10 +4,10 @@
 # another issue ive run into is DEADRLU's so during original weight initialization im hard coding a standard deviation of 0.1 and normal distribution of 0, almost 50% of nuerons are deadRLU's which means they get negative values and remain zero thus never changing and thus not affecting the weights during training
 # solution to this issue: He initalization of weights ( a design to keep ReLU's alive) -> scales the weights based on the number of incoming connections  basically if we take the weight between Input layer and first hidden layer, we get the number of incoming connections as the no. of nuerons of input layer, since each nueron connects to the hidden layers nueron atleast once
 # HE INITIALIZATION -> Specifically for RELu breaks for other activations
+# LeakyRelu's implemented to further stop dead Relu's during training aswell
+# LIBRARY GOT stable SCORE OF 16/20 FOR NOW improved from previous 14/20
 
 import numpy as np
-from streamlit import delta_generator
-
 
 class YathNeuralNet:
     rng = np.random.default_rng()
@@ -23,6 +23,8 @@ class YathNeuralNet:
         self.allErrors : list[np.ndarray | None] = [None] * (len(self.hidden_nueron_array) + 1)
         #initializing learning rate
         self.learning_rate = learning_rate
+        #intializing LeakyRelU alpha
+        self.leaky_relu_alpha : float = 0.01
         # initialzing temporary weight matrices and biases matrices arrays
         self.allweightsarray : list[np.ndarray | None] = [None] * (len(self.hidden_nueron_array) + 1)
 
@@ -47,18 +49,26 @@ class YathNeuralNet:
                 self.allweightsarray[i] = self.rng.normal(0, std_dev, (self.hidden_nueron_array[i], self.hidden_nueron_array[i-1]))
                 self.biases_array[i] = np.ones((self.hidden_nueron_array[i], 1)) * 0.01
 
-    def sigmoid(self,x):  # the sigmoid function for activation of output layers
-        return 1 / (1 + np.exp(-x))  # clean probablity between 0 and 1
-
-    def ultasigmoid(self, x): # ultasigmoid or the derivative of the sigmoid function
-        return x * (1 - x)
-
+    # The activation graveyard -------
     def relu_act(self, x): # the relu function for activation of hidden layers, processes the values to be only positive
         return np.maximum(0, x)
 
-    def ulta_relu_act(self, x): # the derivative of the relu function at x = 0 is undefined but we keep it 0
+    def ulta_relu_act(self, x): # the derivative of the relu function at x = 0 is undefined, but we keep it 0
         return np.where(x <= 0, 0, 1)  # returns 1 if x > 0 and 0 if x < or = to 0
+    #---------------------------------------
+    #The land of activation survivors
+    def sigmoid(self, x): # the sigmoid function for activation of output layers
+        x = np.clip(x, -15, 15)
+        return 1 / (1 + np.exp(-x))  # clean probablity between 0 and 1
 
+    def ultasigmoid(self, x):  # ultasigmoid or the derivative of the sigmoid function
+        return x * (1 - x)
+
+    def leaky_relu_act(self, x): # the leaky relu activation function, does not allow gradient value to become zero effectively keeping a tiny amount hence preventing stagnant non learning weights, and thus preventing dead gradients/Relu's
+        return np.where(x > 0, x, self.leaky_relu_alpha * x)
+
+    def ulta_leaky_relu_act(self, x): # keeps the alpha (small value) preventing gradient death by zero multiplication, as opposed to normal relu
+        return np.where(x > 0, 1, self.leaky_relu_alpha)
 
     # Feed Forward Algorithm
     def feedforward(self, input_array):
@@ -66,9 +76,9 @@ class YathNeuralNet:
         # loop to calculate values of each elemement in every nueron of hidden matrices in every layer
         for x in range(0, len(self.hidden_matrix_PL_array)):
             if x == 0: # for foremost Hidden Layer (with Input)
-                self.hidden_matrix_PL_array[x] = self.relu_act(np.dot(self.allweightsarray[x], input_matrix) + self.biases_array[x])
+                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(np.dot(self.allweightsarray[x], input_matrix) + self.biases_array[x])
             else: # for every other hidden layer, only goes until the last index in no of layers
-                self.hidden_matrix_PL_array[x] = self.relu_act(np.dot(self.allweightsarray[x], self.hidden_matrix_PL_array[x - 1]) + self.biases_array[x])
+                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(np.dot(self.allweightsarray[x], self.hidden_matrix_PL_array[x - 1]) + self.biases_array[x])
         # calculates the output matrix result
         output_matrix = self.sigmoid(np.dot(self.allweightsarray[-1], self.hidden_matrix_PL_array[-1]) + self.biases_array[-1])
         # converts into readable output
@@ -89,9 +99,9 @@ class YathNeuralNet:
         #hidden calculation - > caculating hidden matrices per layer
         for x in range(0, len(self.hidden_matrix_PL_array)):
             if x == 0:  # for foremost Hidden Layer (with Input)
-                self.hidden_matrix_PL_array[x] = self.relu_act(np.dot(self.allweightsarray[x], input_matrix) + self.biases_array[x])
+                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(np.dot(self.allweightsarray[x], input_matrix) + self.biases_array[x])
             else: # for every other hidden layer
-                self.hidden_matrix_PL_array[x] = self.relu_act(np.dot(self.allweightsarray[x], self.hidden_matrix_PL_array[x - 1]) + self.biases_array[x])
+                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(np.dot(self.allweightsarray[x], self.hidden_matrix_PL_array[x - 1]) + self.biases_array[x])
 
         #output_calculation - > calculating the final output matrix layer
         output_matrix = self.sigmoid(np.dot(self.allweightsarray[-1], self.hidden_matrix_PL_array[-1]) + self.biases_array[-1])## calculating output matrix
@@ -112,14 +122,14 @@ class YathNeuralNet:
         # Tuning is done simultaneously
         for z in range(0, len(self.allweightsarray)):
             if z == 0:
-                gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_relu_act(self.hidden_matrix_PL_array[z])), np.transpose(input_matrix))
+                gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z])), np.transpose(input_matrix))
                 self.allweightsarray[z] += np.clip(gradient_weight_temp, -1.0, 1.0) # Gradient clipping, (to stop those weights from getting as thicc as khalifas ass and exploding) cus the weights compound and increase
-                self.biases_array[z] += np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_relu_act(self.hidden_matrix_PL_array[z]))
+                self.biases_array[z] += np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z]))
             elif z == len(self.allweightsarray) -1:
                 gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ultasigmoid(output_matrix)), np.transpose(self.hidden_matrix_PL_array[z-1]))
                 self.allweightsarray[z] += np.clip(gradient_weight_temp, -1.0, 1.0) # Gradient Clipping
                 self.biases_array[z] +=np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ultasigmoid(output_matrix))
             else:
-                gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_relu_act(self.hidden_matrix_PL_array[z])),np.transpose(self.hidden_matrix_PL_array[z - 1]))
+                gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z])),np.transpose(self.hidden_matrix_PL_array[z - 1]))
                 self.allweightsarray[z] += np.clip(gradient_weight_temp, -1.0, 1.0) # gradient clipping
-                self.biases_array[z] += np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_relu_act(self.hidden_matrix_PL_array[z]))
+                self.biases_array[z] += np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z]))
