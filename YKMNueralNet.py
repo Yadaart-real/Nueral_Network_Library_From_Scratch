@@ -1,11 +1,15 @@
-# Next steps : upgrade this architecture to support multiple hidden layers (check IRL papers for plan) : DONE
+
 # Optimization and betterment : right now code works for relu activaiton because relu function derivative gives zero even for a negative value so it doesn't matter if we pass in pre activation values or post activation values of matrix since either will give same output as again relu derviative gives 0 for negative values and 0 for 0 aswell
 # In the future change the gradient descent code to include my new calculation having derivative taken of pre activation layer to allow for more better activation functions
 # another issue ive run into is DEADRLU's so during original weight initialization im hard coding a standard deviation of 0.1 and normal distribution of 0, almost 50% of nuerons are deadRLU's which means they get negative values and remain zero thus never changing and thus not affecting the weights during training
 # solution to this issue: He initalization of weights ( a design to keep ReLU's alive) -> scales the weights based on the number of incoming connections  basically if we take the weight between Input layer and first hidden layer, we get the number of incoming connections as the no. of nuerons of input layer, since each nueron connects to the hidden layers nueron atleast once
 # HE INITIALIZATION -> Specifically for RELu breaks for other activations
 # LeakyRelu's implemented to further stop dead Relu's during training aswell
-# LIBRARY GOT stable SCORE OF 16/20 FOR NOW improved from previous 14/20
+# LIBRARY GOT stable SCORE OF 18/20 FOR NOW improved from previous 16/20 : Due to BSE implementation
+
+# Logs :
+# Optimization: 1) successfully stored pre activated values for hidden layers and output layers, for other activation derivatives to work
+                    # Note : for sigmoid and leaky relu, storing specific preactivated values is not neccessary as input for sigmoid derivative is the sigmoid activated value itself, and the input for leaky relu derivative relies more on the sign/positive negative or zero,  more than the exact value, and thus can be inferred from the post activated values itself
 
 import numpy as np
 
@@ -19,6 +23,7 @@ class YathNeuralNet:
         self.hidden_nueron_array = hidden_layer_array
         #initalize temporary hidden matrices array
         self.hidden_matrix_PL_array : list[np.ndarray | None] = [None] * (len(self.hidden_nueron_array))
+        self.hidden_matrix_PL_array_preactivation : list[np.ndarray | None] = [None] * (len(self.hidden_nueron_array))
         #initializing Error Array
         self.allErrors : list[np.ndarray | None] = [None] * (len(self.hidden_nueron_array) + 1)
         #initializing learning rate
@@ -99,19 +104,22 @@ class YathNeuralNet:
         #hidden calculation - > caculating hidden matrices per layer
         for x in range(0, len(self.hidden_matrix_PL_array)):
             if x == 0:  # for foremost Hidden Layer (with Input)
-                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(np.dot(self.allweightsarray[x], input_matrix) + self.biases_array[x])
+                self.hidden_matrix_PL_array_preactivation[x] = np.dot(self.allweightsarray[x], input_matrix) + self.biases_array[x] # raw calculation of hidden layer value storing preactivated values for derivative of activation function
+                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(self.hidden_matrix_PL_array_preactivation[x]) # passing through activation function
             else: # for every other hidden layer
-                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(np.dot(self.allweightsarray[x], self.hidden_matrix_PL_array[x - 1]) + self.biases_array[x])
+                self.hidden_matrix_PL_array_preactivation[x] = np.dot(self.allweightsarray[x], self.hidden_matrix_PL_array[x-1]) + self.biases_array[x]
+                self.hidden_matrix_PL_array[x] = self.leaky_relu_act(self.hidden_matrix_PL_array_preactivation[x])
 
         #output_calculation - > calculating the final output matrix layer
-        output_matrix = self.sigmoid(np.dot(self.allweightsarray[-1], self.hidden_matrix_PL_array[-1]) + self.biases_array[-1])## calculating output matrix
+        output_matrix_pre_activ = np.dot(self.allweightsarray[-1], self.hidden_matrix_PL_array[-1]) + self.biases_array[-1] ## calculating output matrix and storing preactivation (although not neccessary for sigmoid function)
+        output_matrix = self.sigmoid(output_matrix_pre_activ) # passing through activation function
 
         # Backpropogation : transpose the weight matrix HO
         #Backpropogation loop -> stores all errors for each hidden layer including output layer in dedicated errors array
         for y in range(len(self.allErrors)-1, -1, -1): # loops backwards
             if y == len(self.allErrors)-1: # for output matrix error
-                self.allErrors[y] = target_matrix - output_matrix
-                #self.allErrors[y] = output_matrix - target_matrix
+                #self.allErrors[y] = np.multiply((target_matrix - output_matrix), self.ultasigmoid(output_matrix)) # use this if I want to use MSE as in MSE the sigmoid derivative doesnt cancel and must also be baked for every hidden weight gradient calculation aswell along with the respective activation layer derivative calculated seperately in gradient function below
+                self.allErrors[y] = target_matrix - output_matrix # use this if I want to use BSE since in BSE the sigmoid derivative cancels out with the derviative of the BSE loss for each layer and so there is no need to pass it into the raw activated errors in the first place as it gets cancelled out along with the denominator of derivative of BSE loss function
 
             else:
                 self.allErrors[y] = np.dot(np.transpose(self.allweightsarray[y+1]), self.allErrors[y+1])
@@ -120,15 +128,21 @@ class YathNeuralNet:
         # Gradient Calculation, # weight gradient = (lr * Error_mat(ahead layer) * derivative w.r.t act function of ahead layer x Transpose_layer (O -> H, H -> I)
         # Calculating Weight gradient and biases gradient for weights between Hidden and Output layers and biases of each hidden layer and output layer
         # Tuning is done simultaneously
+        # note : originally using MSE loss function for entire network (keep the sigmoid derivative hadamard product at outermost weight gradient calculation) , if want to change to BSE loss function of better binary classification (unintentionally i wrote such beautifull code that the raw errors passed down through back propogation
+            # are basically the same since in BSE the sigmoid derivative cancels out leaving only the raw error being passed back which i already do and hence the sigmoid derivative is no longer needed as it again just cancels with the gradient of BSE loss function, and the hidden layer errors never get that bad denominator of guess(1 - guess) as it is
+            # completely eradicated with the first output layer error itself(upon multiuplying by sigmoid derivative) and hence never passed down, and so since i am already applying the sigmoid derivative in the now no longer raw errors (though they are the same as before),
+            # I can just drop the sigmoid derivative when calculating the weight gradient for the outermost weight, but keeping the activation derivative for weights between hidden layers(themselves) and input layer, since the error passed into the gradient calculation for said errors already has inbuilt sigmoid in it during the backpropogation previously explained,
+            # we must keep only the derivative for the specific activation funciton of the hidden layer due to chain rule
+            # i must admit i was doing MSE wrong i completely forgot the backpropogated error roots from the error calculated on the simgoid activated output hence the sigmoid activated values go backwards and hence we need the derivative of the sigmoid activation and the respective activaiton funciton derivative for that hidden layer due to chain rule and so in MSE the sigmoid for the first error doesnt actually cancel out and still remains in the hidden layer calculations aswell as it should
         for z in range(0, len(self.allweightsarray)):
             if z == 0:
                 gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z])), np.transpose(input_matrix))
                 self.allweightsarray[z] += np.clip(gradient_weight_temp, -1.0, 1.0) # Gradient clipping, (to stop those weights from getting as thicc as khalifas ass and exploding) cus the weights compound and increase
                 self.biases_array[z] += np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z]))
             elif z == len(self.allweightsarray) -1:
-                gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ultasigmoid(output_matrix)), np.transpose(self.hidden_matrix_PL_array[z-1]))
+                gradient_weight_temp = np.dot(np.multiply(self.learning_rate, self.allErrors[z]), np.transpose(self.hidden_matrix_PL_array[z-1])) # drop the sigmoid derivative as we bake it into error
                 self.allweightsarray[z] += np.clip(gradient_weight_temp, -1.0, 1.0) # Gradient Clipping
-                self.biases_array[z] +=np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ultasigmoid(output_matrix))
+                self.biases_array[z] += np.multiply(self.learning_rate, self.allErrors[z])
             else:
                 gradient_weight_temp = np.dot(np.multiply(np.multiply(self.learning_rate, self.allErrors[z]), self.ulta_leaky_relu_act(self.hidden_matrix_PL_array[z])),np.transpose(self.hidden_matrix_PL_array[z - 1]))
                 self.allweightsarray[z] += np.clip(gradient_weight_temp, -1.0, 1.0) # gradient clipping
