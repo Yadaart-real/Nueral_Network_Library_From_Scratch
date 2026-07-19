@@ -1,8 +1,10 @@
+import math
+
 from YKMNueralNet import YathNeuralNet as YNN
 import random
 def setup():
     Nueral_net = YNN()
-    Nueral_net.init_self(2, [16, 16, 8], 1, 0.001)
+    Nueral_net.init_self(2, [32, 16, 8], 1, 0.001)
 
     training_data = [
         {"inputs": [2.5347, -1.2991], "correct": [0.0]},
@@ -67,12 +69,91 @@ def setup():
         {"inputs": [1.9716, 1.2377], "correct": [1.0]}
     ]
 
+    validation_data = [
+        {"inputs": [1.2541, 2.8912], "correct": [0.0]},
+        {"inputs": [-2.1045, -0.4512], "correct": [0.0]},
+        {"inputs": [-0.9542, 2.1481], "correct": [0.0]},
+        {"inputs": [3.1254, 4.8962], "correct": [0.0]},
+        {"inputs": [-1.8421, 4.2104], "correct": [0.0]},
+        {"inputs": [0.3541, -0.9214], "correct": [0.0]},
+        {"inputs": [4.2105, -1.1478], "correct": [0.0]},
+        {"inputs": [-0.5412, -2.1047], "correct": [0.0]},
+        {"inputs": [-3.1204, 0.8914], "correct": [0.0]},
+        {"inputs": [2.1485, -0.8412], "correct": [0.0]},
+        {"inputs": [1.8962, 0.4125], "correct": [1.0]},
+        {"inputs": [-1.4512, -3.8962], "correct": [1.0]},
+        {"inputs": [2.8412, 1.1045], "correct": [1.0]},
+        {"inputs": [-0.2148, 2.8412], "correct": [1.0]},
+        {"inputs": [0.8914, 1.2541], "correct": [1.0]},
+        {"inputs": [3.8962, 2.1485], "correct": [1.0]},
+        {"inputs": [-4.1045, 1.8962], "correct": [1.0]},
+        {"inputs": [1.1045, -4.2104], "correct": [1.0]},
+        {"inputs": [2.4512, -2.8412], "correct": [1.0]},
+        {"inputs": [-2.8912, -1.4512], "correct": [1.0]}
+    ]
 
-    # using shuffle training with epochs (i)
-    for i in range(0, 3000):
-        random.shuffle(training_data)  # shuffle the training data every epoch to make training more better
+    # using early stopping for network training
+    # refer R52, R53
+    # note : implementing early stopping to never specify exact number of epochs
+    #BCE error for single data point = - ( y(ln(p)) + (1-y)(ln(1-p))
+    # but for target = 1, BCE loss function boils down to just -ln(p) -> calculated on rough 52
+    # for target = 0, BCE loss function boils down to -ln(1-p) --------------
+    validation_data_losses_temp : int = 0 # setting the temporary variable that is to store the sum of the validation errors (updated/ added upon each datapoint in validation error list
+    patience_amt : int = 150 # initializing patience for the validation loss curve
+    patience_count : int = 0 # initalizing count for patience
+    lowest_val_loss_agg : float # no value initialization of lowest agg val/ lowest point in loss curve
+    stop_training_bool : bool = False # initalizing the break training bool
+    first_iteration : bool = True # initializing bool to check if first epoch iteration
+    peak_weights = [] # initalizing empty peak weights to store the best weights configuration when find lowest point in loss curve
+    peak_biases = [] # initalizing empty peak biases to store the best bias configuration when find lowest point in loss curve
+    noofepochscheck_dev : int = 0 # initializing dev variable for debugging to see no of epochs used
+    while not stop_training_bool: # ensures that it runs another epoch only if it hasnt found the best loss curve point (even after patience)
+        noofepochscheck_dev += 1 # incrementing no of epochs used counter
+        random.shuffle(training_data)  # shuffle the training data every epoch to make training better
         for data in training_data: # go through every data point once each epoch
-            Nueral_net.train(data['inputs'], data['correct'])
+            Nueral_net.train(data['inputs'], data['correct']) # training the NN on the inputs and targets provided
+        #----------------------------------------------------------------------------------------------------------
+        # the NN is now trained for that epoch number (weights and biases modulated)
+        #---------------------------------------------------------------------------------------------------------------
+        for val_dat in validation_data: # iterating through data in validation set
+            val_dat_guess = Nueral_net.feedforward(val_dat['inputs']) # getting the guess(output from NN) after providing each input in validation data 
+            if val_dat['correct'][0] == 1.0: # if target was 1, loss/penalty = -ln(guess)
+                validation_data_losses_temp += (-((math.log10(val_dat_guess[0][0])) * 2.303)) # adding to the temp storing variable that stores summed values of each agg loss for each validation guess
+            else: # if target was 0, loss / penaltly = -ln(1-guess)
+                validation_data_losses_temp += (-((math.log10(1 - val_dat_guess[0][0])) * 2.303))
+
+        momentary_agg_loss = validation_data_losses_temp/len(validation_data) # calculating momentary agg loss for that current epoch after all penalties are summed
+
+        if first_iteration: # checking if it is the first epoch
+            lowest_val_loss_agg = momentary_agg_loss # setting the lowest possible point in loss curve as the momentary loss agg of first epoch
+        else:
+            if momentary_agg_loss < lowest_val_loss_agg: # checking to see if it found a new low in the loss curve 
+                lowest_val_loss_agg = momentary_agg_loss # setting the lowest point to the newly found lowest point
+                peak_weights = [w.copy() for w in Nueral_net.allweightsarray] # copying the weights to store as the best weights
+                peak_biases = [b.copy() for b in Nueral_net.biases_array] # copying the biases to store as the best biases
+                patience_count = 0 # setting the patience counter back to zero ( since we found a new low)
+            else:
+                patience_count += 1 # increment the patience counter (since we are either stuck or increasing our loss)
+
+        if patience_count == patience_amt: # wait until the patience is fully tested to the limit
+            stop_training_bool = True # stop the training if it has fully reached the limit
+        else:
+            stop_training_bool = False # let training continue if not
+
+        validation_data_losses_temp = 0 # reset the validation losses sum amount back to zero so it can be setted by the next epoch
+        first_iteration = False # set the first epoch bool to false once first epoch is finished
+
+
+
+    print(f"Training completed......... \nNumber of epochs used : {str(noofepochscheck_dev)}")
+    if peak_weights is not None:
+        Nueral_net.allweightsarray = peak_weights
+        Nueral_net.biases_array = peak_biases
+        print("Succesfully fetched best possible understanding....")
+        print("Predicting output for user input...")
+    else:
+        print("Error69: Could not fetch best possible understanding")
+        print("Predicting output for user input (based on last epoch trained understanding *inaccurate*)....")
 
 
     #feed forwarding
@@ -100,13 +181,5 @@ def setup():
     ]
     for test_input in X_test:
         print(Nueral_net.feedforward(test_input))
-
-    #print(Nueral_net.feedforward([0.15,0.25,0.45,0.75]))
-    #print(Nueral_net.feedforward([0.85,0.75,0.15,0.30]))
-    #print(Nueral_net.feedforward([1,1]))
-    #print(Nueral_net.feedforward([1,0]))
-
-    #print(result_out)
-
 
 setup()
