@@ -1,4 +1,4 @@
-
+# Future goals: Implement Mini Batch Gradient descent to process/calculate average gradients for given batch of inputs (stored in matrix) to get more efficient training
 # Optimization and betterment : right now code works for relu activaiton because relu function derivative gives zero even for a negative value so it doesn't matter if we pass in pre activation values or post activation values of matrix since either will give same output as again relu derviative gives 0 for negative values and 0 for 0 aswell
 # In the future change the gradient descent code to include my new calculation having derivative taken of pre activation layer to allow for more better activation functions
 # another issue ive run into is DEADRLU's so during original weight initialization im hard coding a standard deviation of 0.1 and normal distribution of 0, almost 50% of nuerons are deadRLU's which means they get negative values and remain zero thus never changing and thus not affecting the weights during training
