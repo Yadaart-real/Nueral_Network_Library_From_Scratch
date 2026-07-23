@@ -1,10 +1,19 @@
 import math
-
+import hashlib
 from YKMNueralNet import YathNeuralNet as YNN
 import random
+import pandas
+
+#Structure for stored configuration
+#dev_param_save_frame = [{
+    #'id' : int,
+    #'peak weights' : list,
+    #'peak biases' : list
+#}]
+
 def setup():
     Nueral_net = YNN()
-    Nueral_net.init_self(2, [32, 16, 8], 1, 0.001)
+    Nueral_net.init_self(2, [32, 16, 8], 1, 0.035)
 
     training_data = [
         {"inputs": [2.5347, -1.2991], "correct": [0.0]},
@@ -91,13 +100,13 @@ def setup():
         {"inputs": [2.4512, -2.8412], "correct": [1.0]},
         {"inputs": [-2.8912, -1.4512], "correct": [1.0]}
     ]
-
-    # using early stopping for network training
+    # optimization 1 (BCE Early Stopping):
+    # using early stopping for network training -> 19th July 2026
     # refer R52, R53
     # note : implementing early stopping to never specify exact number of epochs
     #BCE error for single data point = - ( y(ln(p)) + (1-y)(ln(1-p))
     # but for target = 1, BCE loss function boils down to just -ln(p) -> calculated on rough 52
-    # for target = 0, BCE loss function boils down to -ln(1-p) --------------
+    # for target = 0, BCE loss function boils down to -ln(1-p) --------------^
     validation_data_losses_temp : int = 0 # setting the temporary variable that is to store the sum of the validation errors (updated/ added upon each datapoint in validation error list
     patience_amt : int = 150 # initializing patience for the validation loss curve
     patience_count : int = 0 # initalizing count for patience
@@ -107,7 +116,10 @@ def setup():
     peak_weights = [] # initalizing empty peak weights to store the best weights configuration when find lowest point in loss curve
     peak_biases = [] # initalizing empty peak biases to store the best bias configuration when find lowest point in loss curve
     noofepochscheck_dev : int = 0 # initializing dev variable for debugging to see no of epochs used
+    # optimization 2 (Learning rate decay):
+    decay_rate = 0.994
     while not stop_training_bool: # ensures that it runs another epoch only if it hasnt found the best loss curve point (even after patience)
+        initial_lr = Nueral_net.learning_rate # intial learning rate before decay calculation
         noofepochscheck_dev += 1 # incrementing no of epochs used counter
         random.shuffle(training_data)  # shuffle the training data every epoch to make training better
         for data in training_data: # go through every data point once each epoch
@@ -139,11 +151,11 @@ def setup():
             stop_training_bool = True # stop the training if it has fully reached the limit
         else:
             stop_training_bool = False # let training continue if not
+        # optimization : learning rate decay here (originaly linear, now exponential)
 
+        Nueral_net.learning_rate = initial_lr * (decay_rate)
         validation_data_losses_temp = 0 # reset the validation losses sum amount back to zero so it can be setted by the next epoch
         first_iteration = False # set the first epoch bool to false once first epoch is finished
-
-
 
     print(f"Training completed......... \nNumber of epochs used : {str(noofepochscheck_dev)}")
     if peak_weights is not None:
@@ -154,7 +166,6 @@ def setup():
     else:
         print("Error69: Could not fetch best possible understanding")
         print("Predicting output for user input (based on last epoch trained understanding *inaccurate*)....")
-
 
     #feed forwarding
     X_test = [
@@ -181,5 +192,43 @@ def setup():
     ]
     for test_input in X_test:
         print(Nueral_net.feedforward(test_input))
+    input_to_save(peak_weights=peak_weights, peak_biases=peak_biases) # calling the dev check save function
 
-setup()
+# SAVE DATA TO CSV FILE
+def saving_to_file(dataframe: pandas.DataFrame):
+    dataframe.to_csv("SavedConfigurationsNN.csv", index=False, header=False, mode="a")
+    print("succesfully saved....")
+
+hashed_pass = "7d93acb4450b785428122262f4215c27d0b1002cdc443dc1bc4b47e39824bfbe" # pre set password hash
+def hashing(passcode:str): # inputed password hashing to match hashes
+    inputed_hashed = hashlib.sha256(passcode.encode()).hexdigest()
+    return str(inputed_hashed)
+
+def input_to_save(peak_weights:list, peak_biases:list): # get required input for saving
+    confirmation = str(input("Would u like to save current knobs ? (y/n) : ")).lower()
+    if confirmation == "y":
+        input_password = input("Enter Password : ")
+        if hashing(str(input_password)) == hashed_pass:
+            id_input = input("Enter an id: ")
+            try:
+                int(id_input)
+            except ValueError:
+                print("Aborting (Zero Error tolerance)..")
+                quit()
+            new_frame = {
+                'id' : id_input,
+                'peak weights' : [peak_weights],
+                'peak biases' : [peak_biases]
+            }
+            print("Saving peak weight and biases parameters ")
+            saving_to_file(pandas.DataFrame(new_frame))
+        else:
+            print("incorrect password: self destructing configurations !")
+            quit()
+    elif confirmation == "n":
+        print("self destructing configurations !")
+        quit()
+    else:
+        print("Aborting (Zero Error tolerance)...")
+        quit()
+setup() # call entire module to run
