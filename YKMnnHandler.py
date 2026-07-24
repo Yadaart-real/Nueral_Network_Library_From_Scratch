@@ -199,7 +199,7 @@ def saving_to_file(dataframe: pandas.DataFrame):
     dataframe.to_csv("SavedConfigurationsNN.csv", index=False, header=False, mode="a")
     print("succesfully saved....")
 
-hashed_pass = "7d93acb4450b785428122262f4215c27d0b1002cdc443dc1bc4b47e39824bfbe" # pre set password hash
+ # pre set password hash HIDDEN DUE TO SECURITY REASONS
 def hashing(passcode:str): # inputed password hashing to match hashes
     inputed_hashed = hashlib.sha256(passcode.encode()).hexdigest()
     return str(inputed_hashed)
